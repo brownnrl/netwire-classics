@@ -2,6 +2,8 @@
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE FlexibleContexts #-}
+
 module Main where
 
 import qualified Sounds
@@ -30,7 +32,14 @@ deriving instance Ord SDL.Keysym
 class Physical p where
   bounds :: p -> Bounds
 
-data Bounds = Circle (V2 Double) Double | Point (V2 Double)
+data Bounds = Circle (V2 Double) Double | Point (V2 Double) deriving Show
+
+instance Eq Bounds where
+    Circle c1 r1 == Circle c2 r2 = Prelude.and [c1==c2,r1==r2]
+    Point p1     == Point p2     = p1==p2
+    Circle c1 r1 /= Circle c2 r2 = Prelude.or [c1/=c2,r1/=r2]
+    Point p1     /= Point p2     = p1/=p2
+    _            /= _            = True
 
 intersecting :: Bounds -> Bounds -> Bool
 intersecting (Circle x i) (Circle y j)  = norm (x - y) < (i + j)
@@ -41,8 +50,8 @@ intersecting (Point _) (Point _)        = False
 colliding :: (Physical a, Physical b) => [a] -> b -> Bool
 colliding others this = intersectingAny (map bounds others) (bounds this)
 
-intersectingAny :: [Bounds] -> Bounds -> Bool
-intersectingAny others this = any (intersecting this) others
+intersectingAny :: (Eq Bounds) => [Bounds] -> Bounds -> Bool
+intersectingAny others this = any (intersecting this) [x | x<-others, x/=this]
 
 --------------------------------------------------------------------------------
 data Asteroid = Asteroid { astPos :: V2 Double
@@ -51,6 +60,7 @@ data Asteroid = Asteroid { astPos :: V2 Double
                          , astVelocity :: V2 Double
                          , astSpikes :: [V2 Double]
                          }
+                         deriving Show
 
 instance Physical Asteroid where
   bounds Asteroid{..} = Circle astPos astSize
@@ -168,7 +178,7 @@ main = SDL.withInit [SDL.InitEverything] $ do
   screen <- SDL.setVideoMode 800 600 0 [SDL.SWSurface]--, SDL.Fullscreen]
 
   SDLTTF.init
-  ka1 <- SDLTTF.openFont "ka1.ttf" 10
+  ka1 <- SDLTTF.openFont "FreeMonoBold.ttf" 30
 
   frameRate <- Framerate.new
   Framerate.init frameRate
@@ -333,15 +343,15 @@ asteroidsRound nAsteroids c d e f initialScore = proc keysDown -> do
 
   ufoSpawned = (once --> ufoSpawned) . wackelkontaktM (1 / 1000) . after 30
 
-  collide = mkFix $ \_ (bullets, asteroids, ufos) ->
-    let activeBullets = filter (not . ((||) <$> colliding (map fst asteroids) <*> colliding (map (fst . fst) ufos)) . fst) bullets
-        activeAsteroids = filter (not . colliding (map fst bullets) . fst) asteroids
-        destroyedAsteroids = filter (colliding (map fst bullets) . fst) asteroids
-        activeUfos =
-          filter ( not . ((||) <$> colliding (map fst asteroids) <*> colliding (map fst bullets)) . fst . fst) ufos
-        destroyedUfos =
-          filter ( ((||) <$> colliding (map fst asteroids) <*> colliding (map fst bullets)) . fst . fst) ufos
-    in Right (activeBullets, activeAsteroids, activeUfos, destroyedAsteroids, destroyedUfos)
+collide = mkFix $ \_ (bullets, asteroids, ufos) ->
+  let activeBullets = filter (not . ((||) <$> colliding (map fst asteroids) <*> colliding (map (fst . fst) ufos)) . fst) bullets
+      activeAsteroids = filter (not . (\e -> Prelude.or [(colliding (map fst asteroids) . fst) e,
+                                                         (colliding (map fst bullets)   . fst) e])) asteroids  -- (not . colliding (map fst bullets) . fst) asteroids
+      destroyedAsteroids = filter (\e -> Prelude.or [(colliding (map fst asteroids) . fst) e,
+                                                     (colliding (map fst bullets)   . fst) e]) asteroids
+      activeUfos = filter ( not . ((||) <$> colliding (map fst asteroids) <*> colliding (map fst bullets)) . fst . fst) ufos
+      destroyedUfos = filter ( ((||) <$> colliding (map fst asteroids) <*> colliding (map fst bullets)) . fst . fst) ufos
+  in Right (activeBullets, activeAsteroids, activeUfos, destroyedAsteroids, destroyedUfos)
 
 --------------------------------------------------------------------------------
 randomVelocity
