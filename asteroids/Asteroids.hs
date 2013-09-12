@@ -196,13 +196,13 @@ main = SDL.withInit [SDL.InitEverything] $ do
 
  where
 
-  playForever c d e f = game 4 0
+  playForever c d e f = game 6 0
     where
       game n score =
         let progress (LevelOver Cleared finalScore) =
               game (min 12 $ succ n) finalScore
 
-            progress (LevelOver Crashed _) = game 4 0
+            progress (LevelOver Crashed _) = game 6 0
 
         in switchBy progress (asteroidsRound n c d e f score)
 
@@ -335,7 +335,7 @@ asteroidsRound nAsteroids c d e f initialScore = proc keysDown -> do
   splitAsteroid Asteroid{..}
     | astGeneration < 3 = do
         let mkAsteroid vel =
-              asteroid (succ astGeneration) (astSize / 2) astPos (vel ^* 3)
+              asteroid (succ astGeneration) (astSize / 2) ( astPos + vel ) (vel ^* 3)
             mag = ( fromIntegral $ astGeneration * 20
                   , fromIntegral $ (astGeneration + 1) * 20)
         replicateM 2 (mkAsteroid <$> randomVelocity mag)
