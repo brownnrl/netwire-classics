@@ -72,7 +72,7 @@ instance Positioned Asteroid where
   position f x =  f (astPos x) <&> \b -> x { astPos = b }
 
 --------------------------------------------------------------------------------
-data Bullet = Bullet { bulletPos :: V2 Double }
+data Bullet = Bullet { bulletPos :: V2 Double, bulletFromShip :: Bool }
 
 instance Physical Bullet where
   bounds Bullet{..} = Point bulletPos
@@ -269,7 +269,8 @@ asteroidsRound nAsteroids c d e f initialScore = proc keysDown -> do
     (p, newBulletWires) <- player e -<
       (keysDown, map (bounds . fst) remainingAsteroids ++
                  map (bounds . fst . fst) remainingUfos ++
-                 map (bounds . fst) remainingBullets)
+                 map bounds (filter (not . bulletFromShip) 
+                                    (map (fst) remainingBullets)))
 
     -- Randomly spawn a UFO
     newUfoWires <- pure [ largeUfo ] . ufoSpawned <|> pure [] -< ()
@@ -427,7 +428,7 @@ player deathSound = proc (keysDown, activeAsteroids) -> do
 
   bulletWire ship =
     let velocity = shipRotation ship !* V2 0 (-300)
-    in bullet (shipPos ship + (normalize velocity ^* (shipRadius * 1.1))) velocity
+    in bullet (shipPos ship + (normalize velocity ^* (shipRadius * 1.1))) velocity True
 
   fire = let tryShoot = proc (p, keysDown) -> do
                isShooting -< keysDown
@@ -435,11 +436,10 @@ player deathSound = proc (keysDown, activeAsteroids) -> do
          in tryShoot <|> pure []
 
 --------------------------------------------------------------------------------
-bullet :: (Monad m, Monoid e) => V2 Double -> V2 Double -> Wire e m a Bullet
-bullet initialPosition bulletVelocity = for 1.5 . aBullet
-  where
-    aBullet = Bullet <$> wrapped . integrateVector initialPosition .
-                         pure bulletVelocity
+bullet :: (Monad m, Monoid e) => V2 Double -> V2 Double -> Bool -> Wire e m a Bullet
+bullet initialPosition bulletVelocity fromShip = proc _ -> do
+  pos <- wrapped . integrateVector initialPosition . pure bulletVelocity -< ()
+  for 1.5 . returnA -< Bullet pos fromShip
 
 --------------------------------------------------------------------------------
 playChunk :: SDL.Channel -> SDL.Chunk -> Bool -> Wire e IO a a
@@ -525,7 +525,7 @@ largeUfo = proc _ -> do
   shoot = proc currentPos -> do
     periodically 1 -< ()
     velocity <- (!* V2 0 300) . rotationMatrix <$> noiseRM . pure (0, 2 * pi) -< ()
-    returnA -< [bullet (currentPos + (normalize velocity ^* 30)) velocity]
+    returnA -< [bullet (currentPos + (normalize velocity ^* 30)) velocity False]
 
   ufoPos = let x = integrateVector (V2 0 0) . pure (V2 80 0)
                y = V2 0 <$> randomConstant (0, 600) + 5 * (arr sin . (time * 10))
